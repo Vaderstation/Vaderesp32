@@ -13,7 +13,7 @@ DHT dht(dhtPin, dhtType); // create a DHT object
 
 //--------------------
 
-const int sensorPin = 12; // define the sensor pin
+const int sensorPin = 34; // needs to be 34 when wifi is used
 MQ135 gasSensor = MQ135(sensorPin,RZERO,RLOAD); // create an MQ135 object
 
 //--------------------
@@ -24,31 +24,38 @@ const char* password = "vaderstation";
 char user[] = "dbpro"; // MySQL user login username
 char passwordSQL[] = "dbprodbpro"; // MySQL user login password
 
-int setupDone = 0;
 MySQL_Cursor *cur_mem;
+int sqlFail = 0;
 
 IPAddress server_addr(192,168,137,1); // IP of the MySQL server here
 
 WiFiServer  server(80);
 void setup() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  Serial.println("Setup done");
   Serial.begin(9600); //115200 For sql
   dht.begin();
 
-  connectToNetwork();
 }
 
 void loop() {
-  float gasConcentration = gasSensor.getPPM();//*10; // read the gas concentration in ppm
+  float gasConcentration = gasSensor.getPPM(); // read the gas concentration in ppm
   float temperature = dht.readTemperature(); // read the temperature in degrees Celsius
   float humidity = dht.readHumidity(); // read the humidity in percent
-  Serial.print("PPM ");
-  Serial.print(gasConcentration); // print the gas concentration to the serial monitor
-  Serial.print(" Temperature: ");
-  Serial.print(temperature);
-  Serial.print(" Fuktighet ");
-  Serial.print( humidity);
-  Serial.println("%");
+  Serial.println("PPM ");
+  Serial.println(gasConcentration); // print the gas concentration to the serial monitor
   delay(1000); // wait for 1 second
+  WiFi.begin(ssid, password);
+  delay(1000); 
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Establishing connection to WiFi..");
+    sqlFail++;
+    if (sqlFail>8) {
+       ESP.restart();
+    }
+  }
   WiFiClient client;
   MySQL_Connection conn((Client *)&client);
   
@@ -56,27 +63,31 @@ void loop() {
       Serial.println("Database connected.");
       // Initiate the query class instance
       cur_mem = new MySQL_Cursor(&conn);
-      String stringOne = "INSERT INTO test.jeppe (datum,amount) VALUES (NOW(), ";
-      stringOne += humidity;
-      stringOne += ");";
-      char INSERT_SQL[70];
-      stringOne.toCharArray(INSERT_SQL, 70);
+      for (int i =1; i<4; i++) {
+          String stringOne = "INSERT INTO test.Measure VALUES (NOW(), ";
+           if (i==1) {
+              stringOne += temperature;
+           }
+           if (i==2) {
+              stringOne += humidity;
+           }
+           if (i==3) {
+              stringOne += gasConcentration;
+           }
+          stringOne += ", ";
+          stringOne += i;
+          stringOne += ");";
+          char INSERT_SQL[80];
+          stringOne.toCharArray(INSERT_SQL, 80);
       
-      cur_mem->execute(INSERT_SQL);
-
+          cur_mem->execute(INSERT_SQL);
+          Serial.println("Executed SQL ---");
+          delay(1000);
+        }
+        conn.close();
     }
     else{
       Serial.println("Connection failed.");
     }
-}
-void connectToNetwork() {
-  WiFi.begin(ssid, password);
- 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Establishing connection to WiFi..");
-  }
- 
-  Serial.println("Connected to network");
- 
+  
 }
